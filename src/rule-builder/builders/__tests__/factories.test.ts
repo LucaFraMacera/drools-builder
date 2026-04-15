@@ -10,6 +10,7 @@ import {
 import { Operator, Aggregate } from '../enums'
 import { PatternBuilder, UnboundPatternBuilder } from '../PatternBuilder'
 import { AccumulateBuilder } from '../AccumulateBuilder'
+import { MetaToDRLTransformer } from '../../../rule-builder/parser/MetaToDRLTransformer'
 import type { UnboundPattern } from '../../metamodel/types'
 
 // ─── Condition factories ──────────────────────────────────────────────────────
@@ -231,5 +232,85 @@ describe('full rule via factory functions', () => {
     expect(rule.conditions[1]).toMatchObject({ kind: 'Not', condition: { kind: 'UnboundPattern', factType: 'BadgeCollectionConcept' } })
     expect(rule.consequences).toHaveLength(1)
     expect(rule.consequences[0]).toMatchObject({ kind: 'ModifyConsequence', binding: '$player' })
+  })
+})
+
+// ─── Integration: callback block style → DRL ──────────────────────────────────
+
+describe('full rule via callback blocks', () => {
+  it('generates valid DRL', () => {
+    const rule = createRule('Award Badge')
+      .salience(10)
+      .agendaGroup('classification')
+      .noLoop()
+      .when(lhs => {
+        lhs.fact('Player', '$player', p => p
+          .field('score', Operator.Gte, '100')
+          .bind('$id', 'id'),
+        )
+        lhs.not(b => b.fact('BadgeCollectionConcept', p => p
+          .field('name', Operator.Eq, '"gold"'),
+        ))
+      })
+      .then(rhs => {
+        rhs.modify('$player', m => m.call('awardBadge', '"gold"'))
+      })
+      .build()
+
+    const drl = MetaToDRLTransformer.generateRule(rule)
+
+    expect(drl).toContain('rule "Award Badge"')
+    expect(drl).toContain('salience 10')
+    expect(drl).toContain('agenda-group "classification"')
+    expect(drl).toContain('no-loop true')
+    expect(drl).toContain('$player : Player(')
+    expect(drl).toContain(`score ${Operator.Gte} 100`)
+    expect(drl).toContain('$id : id')
+    expect(drl).toContain('not(')
+    expect(drl).toContain('BadgeCollectionConcept(')
+    expect(drl).toContain('modify( $player )')
+    expect(drl).toContain('awardBadge( "gold" )')
+  })
+})
+
+// ─── Integration: both styles produce identical DRL ───────────────────────────
+
+describe('factory style and callback style are equivalent', () => {
+  it('produce identical DRL output for the same rule', () => {
+    const viaFactories = createRule('Award Badge')
+      .salience(10)
+      .agendaGroup('classification')
+      .noLoop()
+      .addCondition(
+        fact('Player', '$player')
+          .field('score', Operator.Gte, '100')
+          .bind('$id', 'id'),
+      )
+      .addCondition(
+        not(unbound('BadgeCollectionConcept').field('name', Operator.Eq, '"gold"')),
+      )
+      .addConsequence(modify('$player').call('awardBadge', '"gold"'))
+      .build()
+
+    const viaCallbacks = createRule('Award Badge')
+      .salience(10)
+      .agendaGroup('classification')
+      .noLoop()
+      .when(lhs => {
+        lhs.fact('Player', '$player', p => p
+          .field('score', Operator.Gte, '100')
+          .bind('$id', 'id'),
+        )
+        lhs.not(b => b.fact('BadgeCollectionConcept', p => p
+          .field('name', Operator.Eq, '"gold"'),
+        ))
+      })
+      .then(rhs => {
+        rhs.modify('$player', m => m.call('awardBadge', '"gold"'))
+      })
+      .build()
+
+    expect(MetaToDRLTransformer.generateRule(viaFactories))
+      .toBe(MetaToDRLTransformer.generateRule(viaCallbacks))
   })
 })
