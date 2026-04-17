@@ -4,7 +4,7 @@
   "description": "TypeScript library for building Drools rules programmatically",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/drools-builder"
+    "url": "https://github.com/LucaFraMacera/drools-builder"
   },
   "license": "MIT",
   "type": "module",
