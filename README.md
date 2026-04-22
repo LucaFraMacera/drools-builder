@@ -77,6 +77,7 @@ Plain metamodel objects are accepted everywhere a builder is expected.
 const file = createFile('fraud-rules')
   .import('com.example.Account')
   .import('com.example.FraudAlert')
+  .global('com.example.AlertService', 'alertService')
   .addRule(rule)
   .addRule(createRule('Another Rule').when(...).then(...))
   .build()

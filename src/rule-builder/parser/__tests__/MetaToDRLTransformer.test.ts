@@ -288,6 +288,7 @@ describe('MetaToDRLTransformer — DroolsFile', () => {
     const file: DroolsFile = {
       name: 'test',
       imports: ['com.example.Player', 'com.example.Game'],
+      globals: [],
       rules: [{ name: 'R', conditions: [], consequences: [] }],
     }
     const drl = MetaToDRLTransformer.generate(file)
@@ -295,10 +296,37 @@ describe('MetaToDRLTransformer — DroolsFile', () => {
     expect(drl).toContain('import com.example.Game;')
   })
 
+  it('generates globals', () => {
+    const file: DroolsFile = {
+      name: 'test',
+      imports: [],
+      globals: [
+        { type: 'com.example.AlertService', name: 'alertService' },
+        { type: 'java.util.List', name: 'results' },
+      ],
+      rules: [{ name: 'R', conditions: [], consequences: [] }],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl).toContain('global com.example.AlertService alertService;')
+    expect(drl).toContain('global java.util.List results;')
+  })
+
+  it('omits global section when there are no globals', () => {
+    const file: DroolsFile = {
+      name: 'test',
+      imports: [],
+      globals: [],
+      rules: [{ name: 'R', conditions: [], consequences: [] }],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl).not.toContain('global')
+  })
+
   it('generates multiple rules', () => {
     const file: DroolsFile = {
       name: 'test',
       imports: [],
+      globals: [],
       rules: [
         { name: 'Rule One', conditions: [], consequences: [] },
         { name: 'Rule Two', conditions: [], consequences: [] },
@@ -313,6 +341,7 @@ describe('MetaToDRLTransformer — DroolsFile', () => {
     const file: DroolsFile = {
       name: 'test',
       imports: [],
+      globals: [],
       rules: [{ name: 'R', conditions: [], consequences: [] }],
     }
     const drl = MetaToDRLTransformer.generate(file)

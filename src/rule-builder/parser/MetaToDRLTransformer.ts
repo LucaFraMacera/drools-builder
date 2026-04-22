@@ -125,6 +125,8 @@ export const MetaToDRLTransformer = {
     const sections: string[] = []
     if (file.imports.length > 0)
       sections.push(file.imports.map(i => `import ${i};`).join('\n'))
+    if (file.globals.length > 0)
+      sections.push(file.globals.map(g => `global ${g.type} ${g.name};`).join('\n'))
     sections.push(file.rules.map(generateRule).join('\n\n'))
     return sections.join('\n\n')
   },

@@ -9,6 +9,7 @@ describe('DroolsFileBuilder', () => {
     const file = createFile('my-rules').build()
     expect(file.name).toBe('my-rules')
     expect(file.imports).toEqual([])
+    expect(file.globals).toEqual([])
     expect(file.rules).toEqual([])
   })
 
@@ -37,6 +38,29 @@ describe('DroolsFileBuilder', () => {
 
     it('is chainable', () => {
       const builder = createFile('f').import('com.example.A')
+      expect(builder).toBeInstanceOf(DroolsFileBuilder)
+    })
+  })
+
+  describe('.global()', () => {
+    it('adds a single global declaration', () => {
+      const file = createFile('f').global('com.example.AlertService', 'alertService').build()
+      expect(file.globals).toEqual([{ type: 'com.example.AlertService', name: 'alertService' }])
+    })
+
+    it('adds multiple globals in order', () => {
+      const file = createFile('f')
+        .global('com.example.AlertService', 'alertService')
+        .global('java.util.List', 'results')
+        .build()
+      expect(file.globals).toEqual([
+        { type: 'com.example.AlertService', name: 'alertService' },
+        { type: 'java.util.List', name: 'results' },
+      ])
+    })
+
+    it('is chainable', () => {
+      const builder = createFile('f').global('com.example.Foo', 'foo')
       expect(builder).toBeInstanceOf(DroolsFileBuilder)
     })
   })
@@ -101,6 +125,7 @@ describe('DroolsFileBuilder', () => {
       expect(file).toEqual({
         name: 'fraud-rules',
         imports: ['com.example.Account', 'com.example.FraudAlert'],
+        globals: [],
         rules: [
           expect.objectContaining({ name: 'Detect Fraud', salience: 100, noLoop: true }),
           expect.objectContaining({ name: 'Clear Alert', salience: 10 }),

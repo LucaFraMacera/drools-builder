@@ -1,4 +1,4 @@
-import type { DroolsFile, Rule } from '../metamodel/types'
+import type { DroolsFile, GlobalDefinition, Rule } from '../metamodel/types'
 import { RuleBuilder } from './RuleBuilder'
 
 interface Buildable<T> { build(): T }
@@ -25,6 +25,7 @@ function resolveRule(input: Rule | Buildable<Rule>): Rule {
 export class DroolsFileBuilder {
   private readonly _name: string
   private readonly _imports: string[] = []
+  private readonly _globals: GlobalDefinition[] = []
   private readonly _rules: Rule[] = []
 
   constructor(name: string) {
@@ -40,6 +41,18 @@ export class DroolsFileBuilder {
    */
   import(className: string): this {
     this._imports.push(className)
+    return this
+  }
+
+  /**
+   * Declare a global variable available to all rules in this file.
+   * Emits `global type name;` in the DRL header.
+   *
+   * @example
+   *   .global('com.example.AlertService', 'alertService')
+   */
+  global(type: string, name: string): this {
+    this._globals.push({ type, name })
     return this
   }
 
@@ -60,6 +73,7 @@ export class DroolsFileBuilder {
     return {
       name: this._name,
       imports: [...this._imports],
+      globals: [...this._globals],
       rules: [...this._rules],
     }
   }

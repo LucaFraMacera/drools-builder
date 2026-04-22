@@ -1,7 +1,7 @@
 import type {
   AccumulateFunction, AccumulatePattern, AndCondition, Condition,
   Consequence, Constraint, ConstraintOperator, DroolsFile, FactPattern,
-  FromCondition, Modification, Rule
+  FromCondition, GlobalDefinition, Modification, Rule
 } from '../metamodel/types'
 
 // ─── LOW-LEVEL UTILITIES ─────────────────────────────────────────────────────
@@ -105,6 +105,14 @@ function parseImports(drl: string): string[] {
   let m: RegExpExecArray | null
   while ((m = re.exec(drl)) !== null) imports.push(m[1].trim())
   return imports
+}
+
+function parseGlobals(drl: string): GlobalDefinition[] {
+  const globals: GlobalDefinition[] = []
+  const re = /^\s*global\s+(\S+)\s+(\S+?)\s*;?$/gm
+  let m: RegExpExecArray | null
+  while ((m = re.exec(drl)) !== null) globals.push({ type: m[1], name: m[2] })
+  return globals
 }
 
 function extractRuleBlocks(drl: string): string[] {
@@ -420,6 +428,7 @@ export const DRLToMetaTransformer = {
     return {
       name: 'parsed',
       imports: parseImports(clean),
+      globals: parseGlobals(clean),
       rules: extractRuleBlocks(clean).map(block => DRLToMetaTransformer.parseRule(block))
     }
   },

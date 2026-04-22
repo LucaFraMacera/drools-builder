@@ -156,6 +156,11 @@ export type Consequence =
 
 // ─── RULE & FILE ──────────────────────────────────────────────────────────────
 
+export interface GlobalDefinition {
+  type: string   // fully-qualified Java class name, e.g. 'com.example.AlertService'
+  name: string   // variable name referenced in rules, e.g. 'alertService'
+}
+
 export interface Rule {
   name: string
   salience?: number
@@ -170,5 +175,6 @@ export interface Rule {
 export interface DroolsFile {
   name: string
   imports: string[]
+  globals: GlobalDefinition[]
   rules: Rule[]
 }
