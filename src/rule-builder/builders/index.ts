@@ -44,6 +44,7 @@ export type {
   SetGlobalConsequence,
   RawConsequence,
   Consequence,
+  GlobalDefinition,
   Rule,
   DroolsFile,
 } from '../metamodel/types'
