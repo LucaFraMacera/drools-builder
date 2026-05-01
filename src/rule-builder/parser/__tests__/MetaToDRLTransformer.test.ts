@@ -450,3 +450,70 @@ describe('MetaToDRLTransformer — DroolsFile', () => {
     expect(drl).not.toContain('import')
   })
 })
+
+describe('MetaToDRLTransformer — WhileConsequence', () => {
+  it('generates a while loop', () => {
+    const drl = generate([], [{ kind: 'WhileConsequence', condition: '$i < 10', body: [{ kind: 'RetractConsequence', binding: '$p' }] }])
+    expect(drl).toContain('while ($i < 10) {')
+    expect(drl).toContain('retract( $p );')
+  })
+})
+
+describe('MetaToDRLTransformer — ForEachConsequence', () => {
+  it('generates a for-each loop', () => {
+    const drl = generate([], [{ kind: 'ForEachConsequence', typeName: 'String', varName: 'item', collection: '$list', body: [{ kind: 'RawConsequence', code: 'log(item)' }] }])
+    expect(drl).toContain('for (String item : $list) {')
+    expect(drl).toContain('log(item);')
+  })
+})
+
+describe('MetaToDRLTransformer — ForConsequence', () => {
+  it('generates a classic for loop', () => {
+    const drl = generate([], [{ kind: 'ForConsequence', init: 'int i = 0', condition: 'i < 10', update: 'i++', body: [{ kind: 'InsertConsequence', objectExpression: 'new Object()' }] }])
+    expect(drl).toContain('for (int i = 0; i < 10; i++) {')
+    expect(drl).toContain('insert( new Object() );')
+  })
+})
+
+describe('MetaToDRLTransformer — VarDeclConsequence', () => {
+  it('generates a variable declaration', () => {
+    const drl = generate([], [{ kind: 'VarDeclConsequence', typeName: 'String', name: 'msg', value: '"hello"' }])
+    expect(drl).toContain('String msg = "hello";')
+  })
+})
+
+describe('MetaToDRLTransformer — MethodCallConsequence', () => {
+  it('generates a method call', () => {
+    const drl = generate([], [{ kind: 'MethodCallConsequence', object: 'utils', method: 'log', args: '"done"' }])
+    expect(drl).toContain('utils.log("done");')
+  })
+})
+
+describe('MetaToDRLTransformer — SwitchConsequence', () => {
+  it('generates a switch with cases', () => {
+    const drl = generate([], [{
+      kind: 'SwitchConsequence',
+      expression: '$status',
+      cases: [
+        { kind: 'CaseConsequence', value: '"active"', body: [{ kind: 'InsertConsequence', objectExpression: 'new Object()' }] },
+        { kind: 'CaseConsequence', value: '"inactive"', body: [{ kind: 'RetractConsequence', binding: '$p' }] },
+      ],
+    }])
+    expect(drl).toContain('switch ($status) {')
+    expect(drl).toContain('case "active":')
+    expect(drl).toContain('case "inactive":')
+    expect(drl).toContain('break;')
+    expect(drl).not.toContain('default')
+  })
+
+  it('generates a switch with a default', () => {
+    const drl = generate([], [{
+      kind: 'SwitchConsequence',
+      expression: '$n',
+      cases: [{ kind: 'CaseConsequence', value: '1', body: [{ kind: 'RawConsequence', code: 'log()' }] }],
+      default: [{ kind: 'RetractConsequence', binding: '$p' }],
+    }])
+    expect(drl).toContain('default:')
+    expect(drl).toContain('retract( $p );')
+  })
+})

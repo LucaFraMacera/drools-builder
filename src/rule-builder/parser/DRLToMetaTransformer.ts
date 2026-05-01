@@ -1,8 +1,9 @@
 import type {
   AccumulateFunction, AccumulatePattern, AndCondition, AttributeDeclaration,
-  ClassDeclaration, Condition, Consequence, Constraint, ConstraintOperator,
-  DroolsFile, FactPattern, FromCondition, FunctionDefinition, GlobalDefinition,
-  IfConsequence, Modification, Rule
+  CaseConsequence, ClassDeclaration, Condition, Consequence, Constraint,
+  ConstraintOperator, DroolsFile, FactPattern, FromCondition, FunctionDefinition,
+  GlobalDefinition, IfConsequence, Modification, Rule
+  // VarDeclConsequence and MethodCallConsequence are build-only — not parsed from DRL
 } from '../metamodel/types'
 
 // ─── LOW-LEVEL UTILITIES ─────────────────────────────────────────────────────
@@ -390,6 +391,39 @@ function parseFrom(text: string, fromIdx: number): FromCondition {
 
 // ─── CONSEQUENCE PARSING ─────────────────────────────────────────────────────
 
+function parseSwitchBody(body: string): { cases: CaseConsequence[], default?: Consequence[] } {
+  const cases: CaseConsequence[] = []
+  let defaultBody: Consequence[] | undefined
+
+  // Collect positions of 'case VALUE:' and 'default:'
+  const markers: Array<{ index: number; headerLen: number; type: 'case' | 'default'; value?: string }> = []
+  const caseRe = /\bcase\s+([^:]+):/g
+  const defRe  = /\bdefault\s*:/g
+  let m: RegExpExecArray | null
+
+  while ((m = caseRe.exec(body)) !== null)
+    markers.push({ index: m.index, headerLen: m[0].length, type: 'case', value: m[1].trim() })
+  while ((m = defRe.exec(body)) !== null)
+    markers.push({ index: m.index, headerLen: m[0].length, type: 'default' })
+
+  markers.sort((a, b) => a.index - b.index)
+
+  for (let i = 0; i < markers.length; i++) {
+    const marker = markers[i]
+    const contentStart = marker.index + marker.headerLen
+    const contentEnd   = i + 1 < markers.length ? markers[i + 1].index : body.length
+    const raw     = body.slice(contentStart, contentEnd).trim()
+    const content = raw.replace(/\s*\bbreak\s*;\s*$/, '').trim()
+
+    if (marker.type === 'case')
+      cases.push({ kind: 'CaseConsequence', value: marker.value!, body: parseConsequences(content) })
+    else
+      defaultBody = parseConsequences(content)
+  }
+
+  return { cases, ...(defaultBody !== undefined && { default: defaultBody }) }
+}
+
 function parseConsequences(then: string): Consequence[] {
   const consequences: Consequence[] = []
   let remaining = then.trim()
@@ -405,6 +439,56 @@ function parseConsequences(then: string): Consequence[] {
 function parseNextConsequence(text: string): { consequence: Consequence; rest: string } | null {
   const t = text.trim()
   if (!t) return null
+
+  // while (...) { ... }
+  if (/^while\s*\(/.test(t)) {
+    const condition = extractBalanced(t, '(', ')')
+    const afterCond = t.slice(t.indexOf('(') + condition.length + 2).trim()
+    const body = extractBalanced(afterCond, '{', '}')
+    const endIdx = afterCond.indexOf('{') + body.length + 2
+    return {
+      consequence: { kind: 'WhileConsequence', condition: condition.trim(), body: parseConsequences(body) },
+      rest: afterCond.slice(endIdx)
+    }
+  }
+
+  // for (...) { ... }  — enhanced for-each or classic for
+  if (/^for\s*\(/.test(t)) {
+    const header = extractBalanced(t, '(', ')')
+    const afterHeader = t.slice(t.indexOf('(') + header.length + 2).trim()
+    const body = extractBalanced(afterHeader, '{', '}')
+    const endIdx = afterHeader.indexOf('{') + body.length + 2
+    const colonIdx = indexAtDepth0(header, ':')
+    if (colonIdx !== -1 && indexAtDepth0(header, ';') === -1) {
+      // for-each: "Type varName : collection"
+      const parts = header.slice(0, colonIdx).trim().split(/\s+/)
+      const varName = parts.pop()!
+      const typeName = parts.join(' ')
+      return {
+        consequence: { kind: 'ForEachConsequence', typeName, varName, collection: header.slice(colonIdx + 1).trim(), body: parseConsequences(body) },
+        rest: afterHeader.slice(endIdx)
+      }
+    } else {
+      // regular for: "init; condition; update"
+      const parts = splitAtDepth0(header, ';')
+      return {
+        consequence: { kind: 'ForConsequence', init: (parts[0] ?? '').trim(), condition: (parts[1] ?? '').trim(), update: (parts[2] ?? '').trim(), body: parseConsequences(body) },
+        rest: afterHeader.slice(endIdx)
+      }
+    }
+  }
+
+  // switch (...) { case ...: ... default: ... }
+  if (/^switch\s*\(/.test(t)) {
+    const expression = extractBalanced(t, '(', ')')
+    const afterExpr = t.slice(t.indexOf('(') + expression.length + 2).trim()
+    const switchBody = extractBalanced(afterExpr, '{', '}')
+    const endIdx = afterExpr.indexOf('{') + switchBody.length + 2
+    return {
+      consequence: { kind: 'SwitchConsequence', expression: expression.trim(), ...parseSwitchBody(switchBody) },
+      rest: afterExpr.slice(endIdx)
+    }
+  }
 
   // if (...) { ... } else { ... }
   if (/^if\s*\(/.test(t)) {

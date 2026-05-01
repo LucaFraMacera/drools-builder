@@ -100,6 +100,39 @@ function generateConsequence(cons: Consequence, indent = '    '): string {
     case 'ReturnConsequence':
       return cons.expression ? `return ${cons.expression};` : 'return;'
 
+    case 'WhileConsequence': {
+      const body = cons.body.map(c => `${indent}  ${generateConsequence(c, indent + '  ')}`).join('\n')
+      return `while (${cons.condition}) {\n${body}\n${indent}}`
+    }
+
+    case 'ForEachConsequence': {
+      const body = cons.body.map(c => `${indent}  ${generateConsequence(c, indent + '  ')}`).join('\n')
+      return `for (${cons.typeName} ${cons.varName} : ${cons.collection}) {\n${body}\n${indent}}`
+    }
+
+    case 'ForConsequence': {
+      const body = cons.body.map(c => `${indent}  ${generateConsequence(c, indent + '  ')}`).join('\n')
+      return `for (${cons.init}; ${cons.condition}; ${cons.update}) {\n${body}\n${indent}}`
+    }
+
+    case 'VarDeclConsequence':
+      return `${cons.typeName} ${cons.name} = ${cons.value};`
+
+    case 'MethodCallConsequence':
+      return `${cons.object}.${cons.method}(${cons.args});`
+
+    case 'SwitchConsequence': {
+      const caseLines = cons.cases.map(c => {
+        const body = c.body.map(b => `${indent}  ${generateConsequence(b, indent + '  ')}`).join('\n')
+        return `${indent}  case ${c.value}:\n${body}\n${indent}    break;`
+      })
+      if (cons.default && cons.default.length > 0) {
+        const defBody = cons.default.map(b => `${indent}  ${generateConsequence(b, indent + '  ')}`).join('\n')
+        caseLines.push(`${indent}  default:\n${defBody}`)
+      }
+      return `switch (${cons.expression}) {\n${caseLines.join('\n')}\n${indent}}`
+    }
+
     case 'IfConsequence': {
       const thenLines = cons.then.map(c => `${indent}  ${generateConsequence(c, indent + '  ')}`).join('\n')
       if (cons.else && cons.else.length > 0) {

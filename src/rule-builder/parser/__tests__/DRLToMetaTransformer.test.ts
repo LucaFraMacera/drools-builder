@@ -337,6 +337,50 @@ describe('DRLToMetaTransformer — consequences', () => {
   })
 })
 
+// ─── Nested if consequence ────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — nested IfConsequence', () => {
+  it('parses a nested if inside an outer if', () => {
+    const rule = parseThen(`
+      if($bs !=null){
+        if((boolean) $bs == true) {
+          update($bsTrips);
+          update($bsKm);
+        }
+      }
+    `)
+    const outer = rule.consequences[0] as any
+    expect(outer.kind).toBe('IfConsequence')
+    expect(outer.condition).toBe('$bs !=null')
+    expect(outer.then).toHaveLength(1)
+    const inner = outer.then[0] as any
+    expect(inner.kind).toBe('IfConsequence')
+    expect(inner.condition).toBe('(boolean) $bs == true')
+    expect(inner.then).toHaveLength(2)
+  })
+
+  it('parses the exact bike rule then block', () => {
+    const rule = parseThen(`
+        if($bs !=null){
+        if((boolean) $bs == true) {
+            utils.log("apply 'BikeSharing_Trips and BikeSharing_Km update'");
+            $bsTrips.setScore($bsTrips.getScore() + 1.0d);
+            $bsKm.setScore($bsKm.getScore() + (Double) $km);
+            update($bsTrips);
+            update($bsKm);
+        }
+    }
+    utils.log("apply 'Bike_Trips and Bike_Km update'")
+        $bikeTrips.setScore($bikeTrips.getScore() + 1.0d)
+        $bikeKm.setScore($bikeKm.getScore() + (Double) $km)
+        update($bikeTrips)
+        update($bikeKm)
+    `)
+    console.log('consequences:', JSON.stringify(rule.consequences, null, 2))
+    expect(rule.consequences[0]).toMatchObject({ kind: 'IfConsequence' })
+  })
+})
+
 // ─── Return consequence ───────────────────────────────────────────────────────
 
 describe('DRLToMetaTransformer — ReturnConsequence', () => {
@@ -429,5 +473,90 @@ describe('DRLToMetaTransformer — class declarations', () => {
     expect(file.declarations).toHaveLength(2)
     expect(file.declarations![0].className).toBe('A')
     expect(file.declarations![1].className).toBe('B')
+  })
+})
+
+// ─── WhileConsequence ─────────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — WhileConsequence', () => {
+  it('parses a while loop', () => {
+    const rule = parseThen('while ($i < 10) {\n  update($x);\n}')
+    expect(rule.consequences[0]).toMatchObject({ kind: 'WhileConsequence', condition: '$i < 10' })
+    expect((rule.consequences[0] as any).body[0]).toMatchObject({ kind: 'RawConsequence', code: 'update($x)' })
+  })
+
+  it('parses consequences after a while loop', () => {
+    const rule = parseThen('while (true) {\n  retract($p);\n}\ninsert( new Object() );')
+    expect(rule.consequences[0]).toMatchObject({ kind: 'WhileConsequence' })
+    expect(rule.consequences[1]).toMatchObject({ kind: 'InsertConsequence' })
+  })
+})
+
+// ─── ForEachConsequence ───────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — ForEachConsequence', () => {
+  it('parses a for-each loop', () => {
+    const rule = parseThen('for (String item : $list) {\n  update($x);\n}')
+    expect(rule.consequences[0]).toMatchObject({
+      kind: 'ForEachConsequence', typeName: 'String', varName: 'item', collection: '$list',
+    })
+    expect((rule.consequences[0] as any).body).toHaveLength(1)
+  })
+
+  it('parses a for-each with a generic type', () => {
+    const rule = parseThen('for (Map.Entry<String, Integer> e : $map.entrySet()) {\n  update($x);\n}')
+    expect((rule.consequences[0] as any).kind).toBe('ForEachConsequence')
+  })
+})
+
+// ─── ForConsequence ───────────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — ForConsequence', () => {
+  it('parses a classic for loop', () => {
+    const rule = parseThen('for (int i = 0; i < 10; i++) {\n  update($x);\n}')
+    expect(rule.consequences[0]).toMatchObject({
+      kind: 'ForConsequence', init: 'int i = 0', condition: 'i < 10', update: 'i++',
+    })
+    expect((rule.consequences[0] as any).body).toHaveLength(1)
+  })
+})
+
+// ─── SwitchConsequence ────────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — SwitchConsequence', () => {
+  it('parses a switch with cases', () => {
+    const rule = parseThen(`
+      switch ($status) {
+        case "active":
+          update($x);
+          break;
+        case "inactive":
+          retract($p);
+          break;
+      }
+    `)
+    const sw = rule.consequences[0] as any
+    expect(sw.kind).toBe('SwitchConsequence')
+    expect(sw.expression).toBe('$status')
+    expect(sw.cases).toHaveLength(2)
+    expect(sw.cases[0]).toMatchObject({ kind: 'CaseConsequence', value: '"active"' })
+    expect(sw.cases[1]).toMatchObject({ kind: 'CaseConsequence', value: '"inactive"' })
+    expect(sw.default).toBeUndefined()
+  })
+
+  it('parses a switch with a default', () => {
+    const rule = parseThen(`
+      switch ($n) {
+        case 1:
+          insert( new Object() );
+          break;
+        default:
+          retract($p);
+      }
+    `)
+    const sw = rule.consequences[0] as any
+    expect(sw.cases).toHaveLength(1)
+    expect(sw.default).toHaveLength(1)
+    expect(sw.default[0]).toMatchObject({ kind: 'RetractConsequence' })
   })
 })

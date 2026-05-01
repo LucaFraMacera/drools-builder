@@ -229,6 +229,65 @@ describe('Round-trip stability', () => {
     expect(JSON.stringify(meta2.declarations![0])).toBe(JSON.stringify(meta1.declarations![0]))
   })
 
+  it('rule with while loop', () => {
+    assertStable(`
+      rule "While Rule"
+      when
+        $p : Player( score > 0 )
+      then
+        while ($p.getScore() > 100) {
+          update($p);
+        }
+      end
+    `)
+  })
+
+  it('rule with for-each loop', () => {
+    assertStable(`
+      rule "ForEach Rule"
+      when
+        $p : Player( score > 0 )
+      then
+        for (String item : $list) {
+          insert( new Object() );
+        }
+      end
+    `)
+  })
+
+  it('rule with classic for loop', () => {
+    assertStable(`
+      rule "For Rule"
+      when
+        $p : Player( score > 0 )
+      then
+        for (int i = 0; i < 10; i++) {
+          retract( $p );
+        }
+      end
+    `)
+  })
+
+  it('rule with switch', () => {
+    assertStable(`
+      rule "Switch Rule"
+      when
+        $p : Player( score > 0 )
+      then
+        switch ($p.getStatus()) {
+          case "active":
+            insert( new Object() );
+            break;
+          case "inactive":
+            retract( $p );
+            break;
+          default:
+            update( $p );
+        }
+      end
+    `)
+  })
+
   it('rule with if/else consequence', () => {
     assertStable(`
       rule "If Rule"

@@ -154,6 +154,55 @@ export interface IfConsequence {
   else?: Consequence[]
 }
 
+export interface WhileConsequence {
+  kind: 'WhileConsequence'
+  condition: string
+  body: Consequence[]
+}
+
+export interface ForEachConsequence {
+  kind: 'ForEachConsequence'
+  typeName: string
+  varName: string
+  collection: string
+  body: Consequence[]
+}
+
+export interface ForConsequence {
+  kind: 'ForConsequence'
+  init: string
+  condition: string
+  update: string
+  body: Consequence[]
+}
+
+export interface VarDeclConsequence {
+  kind: 'VarDeclConsequence'
+  typeName: string
+  name: string
+  value: string
+}
+
+export interface MethodCallConsequence {
+  kind: 'MethodCallConsequence'
+  object: string
+  method: string
+  args: string
+}
+
+export interface CaseConsequence {
+  kind: 'CaseConsequence'
+  value: string          // the case literal, e.g. "\"active\"", "1"
+  body: Consequence[]
+}
+
+export interface SwitchConsequence {
+  kind: 'SwitchConsequence'
+  expression: string     // the switch expression, e.g. "$status"
+  cases: CaseConsequence[]
+  default?: Consequence[]
+}
+
 export interface ReturnConsequence {
   kind: 'ReturnConsequence'
   expression: string     // what is returned; empty string for void return
@@ -167,6 +216,12 @@ export type Consequence =
   | RawConsequence
   | IfConsequence
   | ReturnConsequence
+  | SwitchConsequence
+  | WhileConsequence
+  | ForEachConsequence
+  | ForConsequence
+  | VarDeclConsequence
+  | MethodCallConsequence
 
 // ─── RULE & FILE ──────────────────────────────────────────────────────────────
 
