@@ -147,12 +147,26 @@ export interface RawConsequence {
   code: string           // verbatim — emitted as-is by MetaToDRLTransformer
 }
 
+export interface IfConsequence {
+  kind: 'IfConsequence'
+  condition: string      // raw Java boolean expression inside if(...)
+  then: Consequence[]
+  else?: Consequence[]
+}
+
+export interface ReturnConsequence {
+  kind: 'ReturnConsequence'
+  expression: string     // what is returned; empty string for void return
+}
+
 export type Consequence =
   | ModifyConsequence
   | InsertConsequence
   | RetractConsequence
   | SetGlobalConsequence
   | RawConsequence
+  | IfConsequence
+  | ReturnConsequence
 
 // ─── RULE & FILE ──────────────────────────────────────────────────────────────
 
@@ -172,9 +186,28 @@ export interface Rule {
   consequences: Consequence[]
 }
 
+export interface FunctionDefinition {
+  returnType: string
+  name: string
+  params: string         // raw parameter list, e.g. "String msg, int value"
+  body: Consequence[]
+}
+
+export interface AttributeDeclaration {
+  name: string
+  type: string           // Java type, e.g. "String", "int", "java.util.Date"
+}
+
+export interface ClassDeclaration {
+  className: string
+  attributes: AttributeDeclaration[]
+}
+
 export interface DroolsFile {
   name: string
   imports: string[]
   globals: GlobalDefinition[]
+  declarations?: ClassDeclaration[]
+  functions?: FunctionDefinition[]
   rules: Rule[]
 }

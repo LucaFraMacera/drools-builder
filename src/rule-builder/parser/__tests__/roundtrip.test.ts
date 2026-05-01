@@ -187,4 +187,60 @@ describe('Round-trip stability', () => {
       expect(JSON.stringify(meta2.rules[i].consequences)).toBe(JSON.stringify(meta1.rules[i].consequences))
     }
   })
+
+  it('file with function definition', () => {
+    const drl = `
+      function double add(double a, double b) {
+        return a + b;
+      }
+
+      rule "Add Rule"
+      when
+        $p : Player( score > 0 )
+      then
+        insert( new Object() );
+      end
+    `
+    const meta1 = DRLToMetaTransformer.parse(drl)
+    const regen = MetaToDRLTransformer.generate(meta1)
+    const meta2 = DRLToMetaTransformer.parse(regen)
+    expect(meta2.functions).toHaveLength(1)
+    expect(JSON.stringify(meta2.functions![0])).toBe(JSON.stringify(meta1.functions![0]))
+  })
+
+  it('file with class declaration', () => {
+    const drl = `
+      declare Person
+        name : String
+        age  : int
+      end
+
+      rule "R"
+      when
+        $p : Person()
+      then
+        insert( new Object() );
+      end
+    `
+    const meta1 = DRLToMetaTransformer.parse(drl)
+    const regen = MetaToDRLTransformer.generate(meta1)
+    const meta2 = DRLToMetaTransformer.parse(regen)
+    expect(meta2.declarations).toHaveLength(1)
+    expect(JSON.stringify(meta2.declarations![0])).toBe(JSON.stringify(meta1.declarations![0]))
+  })
+
+  it('rule with if/else consequence', () => {
+    assertStable(`
+      rule "If Rule"
+      when
+        $p : Player( score > 30 )
+      then
+        if ($p.getScore() > 50) {
+          insert( new Reward() );
+        } else {
+          retract( $p );
+        }
+      end
+    `)
+  })
 })
