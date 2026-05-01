@@ -2,4 +2,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+
+# DIAGRAMS
+
+*.mmd
 *.drawio

@@ -80,9 +80,29 @@ describe('DRLToMetaTransformer — rule attributes', () => {
     expect(rule.noLoop).toBe(true)
   })
 
+  it('parses bare no-loop as true', () => {
+    const rule = DRLToMetaTransformer.parse('rule "R" no-loop when then end').rules[0]
+    expect(rule.noLoop).toBe(true)
+  })
+
+  it('does not set noLoop for no-loop false', () => {
+    const rule = DRLToMetaTransformer.parse('rule "R" no-loop false when then end').rules[0]
+    expect(rule.noLoop).toBeUndefined()
+  })
+
   it('parses lock-on-active true', () => {
     const rule = DRLToMetaTransformer.parse('rule "R" lock-on-active true when then end').rules[0]
     expect(rule.lockOnActive).toBe(true)
+  })
+
+  it('parses bare lock-on-active as true', () => {
+    const rule = DRLToMetaTransformer.parse('rule "R" lock-on-active when then end').rules[0]
+    expect(rule.lockOnActive).toBe(true)
+  })
+
+  it('does not set lockOnActive for lock-on-active false', () => {
+    const rule = DRLToMetaTransformer.parse('rule "R" lock-on-active false when then end').rules[0]
+    expect(rule.lockOnActive).toBeUndefined()
   })
 
   it('parses agenda-group', () => {
@@ -288,5 +308,126 @@ describe('DRLToMetaTransformer — consequences', () => {
   it('parses multiple consequences in sequence', () => {
     const rule = parseThen('insert( new Alert() );\nretract( $p );')
     expect(rule.consequences).toHaveLength(2)
+  })
+
+  it('parses an if block as IfConsequence', () => {
+    const rule = parseThen('if (x > 0) {\n  insert( new Alert() );\n}')
+    expect(rule.consequences[0]).toMatchObject({
+      kind: 'IfConsequence',
+      condition: 'x > 0',
+      then: [{ kind: 'InsertConsequence', objectExpression: 'new Alert()' }],
+    })
+    expect((rule.consequences[0] as any).else).toBeUndefined()
+  })
+
+  it('parses an if/else block as IfConsequence', () => {
+    const rule = parseThen('if (score > 50) {\n  insert( new Reward() );\n} else {\n  retract( $p );\n}')
+    const c = rule.consequences[0] as any
+    expect(c.kind).toBe('IfConsequence')
+    expect(c.condition).toBe('score > 50')
+    expect(c.then[0]).toMatchObject({ kind: 'InsertConsequence' })
+    expect(c.else[0]).toMatchObject({ kind: 'RetractConsequence' })
+  })
+
+  it('parses consequences after an if block', () => {
+    const rule = parseThen('if (x > 0) {\n  insert( new Alert() );\n}\nretract( $p );')
+    expect(rule.consequences).toHaveLength(2)
+    expect(rule.consequences[0]).toMatchObject({ kind: 'IfConsequence' })
+    expect(rule.consequences[1]).toMatchObject({ kind: 'RetractConsequence' })
+  })
+})
+
+// ─── Return consequence ───────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — ReturnConsequence', () => {
+  it('parses return with expression', () => {
+    const rule = parseThen('return $p.getScore();')
+    expect(rule.consequences[0]).toEqual({ kind: 'ReturnConsequence', expression: '$p.getScore()' })
+  })
+
+  it('parses bare return', () => {
+    const rule = parseThen('return;')
+    expect(rule.consequences[0]).toEqual({ kind: 'ReturnConsequence', expression: '' })
+  })
+})
+
+// ─── Function definitions ─────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — function definitions', () => {
+  it('parses a void function with no params', () => {
+    const file = DRLToMetaTransformer.parse(`
+      function void greet() {
+        System.out.println("hello");
+      }
+      rule "R" when then end
+    `)
+    expect(file.functions).toHaveLength(1)
+    expect(file.functions![0]).toMatchObject({ returnType: 'void', name: 'greet', params: '' })
+    expect(file.functions![0].body[0]).toMatchObject({ kind: 'RawConsequence', code: 'System.out.println("hello")' })
+  })
+
+  it('parses a function with params and return', () => {
+    const file = DRLToMetaTransformer.parse(`
+      function double add(double a, double b) {
+        return a + b;
+      }
+      rule "R" when then end
+    `)
+    expect(file.functions![0]).toMatchObject({ returnType: 'double', name: 'add', params: 'double a, double b' })
+    expect(file.functions![0].body[0]).toMatchObject({ kind: 'ReturnConsequence', expression: 'a + b' })
+  })
+
+  it('parses multiple functions', () => {
+    const file = DRLToMetaTransformer.parse(`
+      function void a() { return; }
+      function void b() { return; }
+      rule "R" when then end
+    `)
+    expect(file.functions).toHaveLength(2)
+    expect(file.functions![0].name).toBe('a')
+    expect(file.functions![1].name).toBe('b')
+  })
+})
+
+// ─── Class declarations ───────────────────────────────────────────────────────
+
+describe('DRLToMetaTransformer — class declarations', () => {
+  it('parses a declare block with attributes', () => {
+    const file = DRLToMetaTransformer.parse(`
+      declare Person
+        name : String
+        age  : int
+      end
+      rule "R" when then end
+    `)
+    expect(file.declarations).toHaveLength(1)
+    expect(file.declarations![0].className).toBe('Person')
+    expect(file.declarations![0].attributes).toHaveLength(2)
+    expect(file.declarations![0].attributes[0]).toEqual({ name: 'name', type: 'String' })
+    expect(file.declarations![0].attributes[1]).toEqual({ name: 'age', type: 'int' })
+  })
+
+  it('parses a declare block with no attributes', () => {
+    const file = DRLToMetaTransformer.parse(`
+      declare Marker
+      end
+      rule "R" when then end
+    `)
+    expect(file.declarations![0]).toMatchObject({ className: 'Marker', attributes: [] })
+  })
+
+  it('parses multiple declare blocks', () => {
+    const file = DRLToMetaTransformer.parse(`
+      declare A
+        x : double
+      end
+      declare B
+        y : String
+      end
+      rule "R" when then end
+    `)
+    expect(file.declarations).toHaveLength(2)
+    expect(file.declarations![0].className).toBe('A')
+    expect(file.declarations![1].className).toBe('B')
   })
 })

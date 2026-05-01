@@ -1,7 +1,8 @@
 import type {
-  AccumulateFunction, AccumulatePattern, AndCondition, Condition,
-  Consequence, Constraint, ConstraintOperator, DroolsFile, FactPattern,
-  FromCondition, GlobalDefinition, Modification, Rule
+  AccumulateFunction, AccumulatePattern, AndCondition, AttributeDeclaration,
+  ClassDeclaration, Condition, Consequence, Constraint, ConstraintOperator,
+  DroolsFile, FactPattern, FromCondition, FunctionDefinition, GlobalDefinition,
+  IfConsequence, Modification, Rule
 } from '../metamodel/types'
 
 // ─── LOW-LEVEL UTILITIES ─────────────────────────────────────────────────────
@@ -117,28 +118,62 @@ function parseGlobals(drl: string): GlobalDefinition[] {
 
 function extractRuleBlocks(drl: string): string[] {
   const blocks: string[] = []
-  const re = /\brule\s+"[^"]*"[\s\S]*?\bend\b/g
+  const re = /\brule\s+(?:"[^"]*"|'[^']*')[\s\S]*?\bend\b/g
   let m: RegExpExecArray | null
   while ((m = re.exec(drl)) !== null) blocks.push(m[0])
   return blocks
 }
 
+function parseFunctions(drl: string): FunctionDefinition[] {
+  const results: FunctionDefinition[] = []
+  // Matches: function <returnType> <name>(<params>) { <body> }
+  // ([^{}]*(?:\{[^{}]*\}[^{}]*)*) handles one level of nested braces (e.g. if blocks)
+  const re = /\bfunction\s+([\w<>?,\s\[\]]+?)\s+(\w+)\s*\(([^)]*)\)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(drl)) !== null) {
+    results.push({
+      returnType: m[1].trim(),
+      name: m[2].trim(),
+      params: m[3].trim(),
+      body: parseConsequences(m[4].trim())
+    })
+  }
+  return results
+}
+
+function parseDeclarations(drl: string): ClassDeclaration[] {
+  const results: ClassDeclaration[] = []
+  const re = /\bdeclare\s+(\w+)\s*([\s\S]*?)\bend\b/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(drl)) !== null) {
+    const className = m[1].trim()
+    const attributes: AttributeDeclaration[] = []
+    const attrRe = /^\s*(\w+)\s*:\s*(\S+)/gm
+    let a: RegExpExecArray | null
+    while ((a = attrRe.exec(m[2])) !== null) {
+      attributes.push({ name: a[1].trim(), type: a[2].trim() })
+    }
+    results.push({ className, attributes })
+  }
+  return results
+}
+
 // ─── RULE-LEVEL PARSING ──────────────────────────────────────────────────────
 
 function parseRuleName(block: string): string {
-  const m = block.match(/\brule\s+"([^"]+)"/)
-  return m ? m[1] : 'unknown'
+  const m = block.match(/\brule\s+(?:"([^"]+)"|'([^']+)')/)
+  return m ? (m[1] ?? m[2]) : 'unknown'
 }
 
 function parseRuleAttributes(block: string): Partial<Rule> {
   const attrs: Partial<Rule> = {}
-  const m = block.match(/\brule\s+"[^"]+"\s*([\s\S]*?)\bwhen\b/)
+  const m = block.match(/\brule\s+(?:"[^"]+"|'[^']+')\s*([\s\S]*?)\bwhen\b/)
   if (!m) return attrs
   const attr = m[1]
   const salience = attr.match(/\bsalience\s+(-?\d+)/)
   if (salience) attrs.salience = parseInt(salience[1], 10)
-  if (/\bno-loop\s+true\b/.test(attr)) attrs.noLoop = true
-  if (/\block-on-active\s+true\b/.test(attr)) attrs.lockOnActive = true
+  if (!/\bno-loop\s+false\b/.test(attr) && /\bno-loop\b/.test(attr)) attrs.noLoop = true
+  if (!/\block-on-active\s+false\b/.test(attr) && /\block-on-active\b/.test(attr)) attrs.lockOnActive = true
   const ag = attr.match(/\bagenda-group\s+"([^"]+)"/)
   if (ag) attrs.agendaGroup = ag[1]
   const rfg = attr.match(/\bruleflow-group\s+"([^"]+)"/)
@@ -371,6 +406,25 @@ function parseNextConsequence(text: string): { consequence: Consequence; rest: s
   const t = text.trim()
   if (!t) return null
 
+  // if (...) { ... } else { ... }
+  if (/^if\s*\(/.test(t)) {
+    const condition = extractBalanced(t, '(', ')')
+    const afterCond = t.slice(t.indexOf('(') + condition.length + 2).trim()
+    const thenBlock = extractBalanced(afterCond, '{', '}')
+    const thenConsequences = parseConsequences(thenBlock)
+    let afterThen = afterCond.slice(afterCond.indexOf('{') + thenBlock.length + 2).trim()
+    let elseConsequences: IfConsequence['else']
+    if (/^else\s*\{/.test(afterThen)) {
+      const elseBlock = extractBalanced(afterThen, '{', '}')
+      elseConsequences = parseConsequences(elseBlock)
+      afterThen = afterThen.slice(afterThen.indexOf('{') + elseBlock.length + 2).trim()
+    }
+    return {
+      consequence: { kind: 'IfConsequence', condition: condition.trim(), then: thenConsequences, ...(elseConsequences && { else: elseConsequences }) },
+      rest: afterThen
+    }
+  }
+
   // modify( $binding ) { ... }
   if (/^modify\s*\(/.test(t)) {
     const m = t.match(/^modify\s*\(\s*(\$\w+)\s*\)/)
@@ -397,6 +451,16 @@ function parseNextConsequence(text: string): { consequence: Consequence; rest: s
     const inner = extractBalanced(t, '(', ')')
     const rest = t.slice(t.indexOf('(') + inner.length + 2).replace(/^\s*;/, '')
     return { consequence: { kind: 'RetractConsequence', binding: inner.trim() }, rest }
+  }
+
+  // return expression; or bare return;
+  if (/^return\b/.test(t)) {
+    const semiIdx = indexAtDepth0(t, ';')
+    const expression = t.slice('return'.length, semiIdx !== -1 ? semiIdx : undefined).trim()
+    return {
+      consequence: { kind: 'ReturnConsequence', expression },
+      rest: semiIdx !== -1 ? t.slice(semiIdx + 1) : ''
+    }
   }
 
   // Any other statement ending with ;
@@ -427,8 +491,10 @@ export const DRLToMetaTransformer = {
     const clean = stripComments(drl)
     return {
       name: 'parsed',
-      imports: parseImports(clean),
+      imports: [...new Set(parseImports(clean))],
       globals: parseGlobals(clean),
+      declarations: parseDeclarations(clean),
+      functions: parseFunctions(clean),
       rules: extractRuleBlocks(clean).map(block => DRLToMetaTransformer.parseRule(block))
     }
   },

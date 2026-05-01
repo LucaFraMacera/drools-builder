@@ -243,6 +243,108 @@ describe('MetaToDRLTransformer — RawConsequence', () => {
   })
 })
 
+describe('MetaToDRLTransformer — ReturnConsequence', () => {
+  it('generates return with expression', () => {
+    const drl = generate([], [{ kind: 'ReturnConsequence', expression: '$p.getScore()' }])
+    expect(drl).toContain('return $p.getScore();')
+  })
+
+  it('generates bare return for empty expression', () => {
+    const drl = generate([], [{ kind: 'ReturnConsequence', expression: '' }])
+    expect(drl).toContain('return;')
+  })
+})
+
+describe('MetaToDRLTransformer — function definitions', () => {
+  it('generates a function before rules', () => {
+    const file = {
+      name: 'f',
+      imports: [],
+      globals: [],
+      functions: [{ returnType: 'void', name: 'greet', params: '', body: [{ kind: 'RawConsequence' as const, code: 'System.out.println("hi")' }] }],
+      rules: [{ name: 'R', conditions: [], consequences: [] }],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl).toContain('function void greet()')
+    expect(drl).toContain('System.out.println("hi");')
+    expect(drl.indexOf('function')).toBeLessThan(drl.indexOf('rule'))
+  })
+
+  it('generates a function with params and return', () => {
+    const file = {
+      name: 'f',
+      imports: [],
+      globals: [],
+      functions: [{ returnType: 'double', name: 'add', params: 'double a, double b', body: [{ kind: 'ReturnConsequence' as const, expression: 'a + b' }] }],
+      rules: [],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl).toContain('function double add(double a, double b)')
+    expect(drl).toContain('return a + b;')
+  })
+})
+
+describe('MetaToDRLTransformer — class declarations', () => {
+  it('generates a declare block with attributes', () => {
+    const file: DroolsFile = {
+      name: 'f', imports: [], globals: [], rules: [],
+      declarations: [{ className: 'Person', attributes: [{ name: 'name', type: 'String' }, { name: 'age', type: 'int' }] }],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl).toContain('declare Person')
+    expect(drl).toContain('    name : String')
+    expect(drl).toContain('    age : int')
+    expect(drl).toContain('end')
+  })
+
+  it('generates a declare block with no attributes', () => {
+    const file: DroolsFile = {
+      name: 'f', imports: [], globals: [], rules: [],
+      declarations: [{ className: 'Marker', attributes: [] }],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl).toContain('declare Marker')
+    expect(drl).toContain('end')
+  })
+
+  it('generates declarations before functions and rules', () => {
+    const file: DroolsFile = {
+      name: 'f', imports: [], globals: [],
+      declarations: [{ className: 'MyFact', attributes: [] }],
+      functions: [{ returnType: 'void', name: 'fn', params: '', body: [] }],
+      rules: [{ name: 'R', conditions: [], consequences: [] }],
+    }
+    const drl = MetaToDRLTransformer.generate(file)
+    expect(drl.indexOf('declare')).toBeLessThan(drl.indexOf('function'))
+    expect(drl.indexOf('function')).toBeLessThan(drl.indexOf('rule'))
+  })
+})
+
+describe('MetaToDRLTransformer — IfConsequence', () => {
+  it('generates an if block without else', () => {
+    const drl = generate([], [{
+      kind: 'IfConsequence',
+      condition: 'x > 0',
+      then: [{ kind: 'InsertConsequence', objectExpression: 'new Alert()' }],
+    }])
+    expect(drl).toContain('if (x > 0) {')
+    expect(drl).toContain('insert( new Alert() );')
+    expect(drl).not.toContain('else')
+  })
+
+  it('generates an if/else block', () => {
+    const drl = generate([], [{
+      kind: 'IfConsequence',
+      condition: 'score > 50',
+      then: [{ kind: 'InsertConsequence', objectExpression: 'new Reward()' }],
+      else: [{ kind: 'RetractConsequence', binding: '$p' }],
+    }])
+    expect(drl).toContain('if (score > 50) {')
+    expect(drl).toContain('} else {')
+    expect(drl).toContain('retract( $p );')
+  })
+})
+
 // ─── Rule generation ──────────────────────────────────────────────────────────
 
 describe('MetaToDRLTransformer — rule attributes', () => {

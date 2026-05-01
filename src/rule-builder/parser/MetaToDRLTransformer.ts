@@ -1,4 +1,4 @@
-import type { AndCondition, Condition, Consequence, Constraint, DroolsFile, Rule } from '../metamodel/types'
+import type { AndCondition, ClassDeclaration, Condition, Consequence, Constraint, DroolsFile, FunctionDefinition, Rule } from '../metamodel/types'
 
 // ─── CONSTRAINT GENERATION ───────────────────────────────────────────────────
 
@@ -97,7 +97,32 @@ function generateConsequence(cons: Consequence, indent = '    '): string {
       return `${cons.expression};`
     case 'RawConsequence':
       return `${cons.code};`
+    case 'ReturnConsequence':
+      return cons.expression ? `return ${cons.expression};` : 'return;'
+
+    case 'IfConsequence': {
+      const thenLines = cons.then.map(c => `${indent}  ${generateConsequence(c, indent + '  ')}`).join('\n')
+      if (cons.else && cons.else.length > 0) {
+        const elseLines = cons.else.map(c => `${indent}  ${generateConsequence(c, indent + '  ')}`).join('\n')
+        return `if (${cons.condition}) {\n${thenLines}\n${indent}} else {\n${elseLines}\n${indent}}`
+      }
+      return `if (${cons.condition}) {\n${thenLines}\n${indent}}`
+    }
   }
+}
+
+// ─── DECLARATION GENERATION ──────────────────────────────────────────────────
+
+function generateDeclaration(decl: ClassDeclaration): string {
+  const attrs = decl.attributes.map(a => `    ${a.name} : ${a.type}`).join('\n')
+  return `declare ${decl.className}${attrs ? '\n' + attrs + '\n' : '\n'}end`
+}
+
+// ─── FUNCTION GENERATION ─────────────────────────────────────────────────────
+
+function generateFunction(fn: FunctionDefinition, indent = '    '): string {
+  const body = fn.body.map(c => `${indent}${generateConsequence(c, indent)}`).join('\n')
+  return `function ${fn.returnType} ${fn.name}(${fn.params}) {\n${body}\n}`
 }
 
 // ─── RULE GENERATION ─────────────────────────────────────────────────────────
@@ -127,6 +152,10 @@ export const MetaToDRLTransformer = {
       sections.push(file.imports.map(i => `import ${i};`).join('\n'))
     if (file.globals.length > 0)
       sections.push(file.globals.map(g => `global ${g.type} ${g.name};`).join('\n'))
+    if (file.declarations && file.declarations.length > 0)
+      sections.push(file.declarations.map(d => generateDeclaration(d)).join('\n\n'))
+    if (file.functions && file.functions.length > 0)
+      sections.push(file.functions.map(fn => generateFunction(fn)).join('\n\n'))
     sections.push(file.rules.map(generateRule).join('\n\n'))
     return sections.join('\n\n')
   },
