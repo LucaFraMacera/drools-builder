@@ -3,7 +3,4 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# DIAGRAMS
-
 *.mmd
-*.drawio

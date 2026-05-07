@@ -16,6 +16,30 @@ function parseThen(drl: string) {
 // ─── File-level parsing ───────────────────────────────────────────────────────
 
 describe('DRLToMetaTransformer.parse() — file level', () => {
+  it('parses a package declaration', () => {
+    const file = DRLToMetaTransformer.parse(`
+      package eu.trentorise.game.model
+      rule "R" when then end
+    `)
+    expect(file.package).toBe('eu.trentorise.game.model')
+  })
+
+  it('parses a package with inline comments before imports', () => {
+    const file = DRLToMetaTransformer.parse(`
+      package eu.trentorise.game.model
+      //list any import classes here.
+      import eu.trentorise.game.core.Utility;
+      rule "R" when then end
+    `)
+    expect(file.package).toBe('eu.trentorise.game.model')
+    expect(file.imports).toContain('eu.trentorise.game.core.Utility')
+  })
+
+  it('returns undefined package when none declared', () => {
+    const file = DRLToMetaTransformer.parse('rule "R" when then end')
+    expect(file.package).toBeUndefined()
+  })
+
   it('parses imports', () => {
     const file = DRLToMetaTransformer.parse(`
       import com.example.model.Player;

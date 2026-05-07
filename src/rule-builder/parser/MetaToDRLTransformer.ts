@@ -124,7 +124,7 @@ function generateConsequence(cons: Consequence, indent = '    '): string {
     case 'SwitchConsequence': {
       const caseLines = cons.cases.map(c => {
         const body = c.body.map(b => `${indent}  ${generateConsequence(b, indent + '  ')}`).join('\n')
-        return `${indent}  case ${c.value}:\n${body}\n${indent}    break;`
+        return `${indent}  case ${c.value}:\n${body}`
       })
       if (cons.default && cons.default.length > 0) {
         const defBody = cons.default.map(b => `${indent}  ${generateConsequence(b, indent + '  ')}`).join('\n')
@@ -181,6 +181,8 @@ export const MetaToDRLTransformer = {
 
   generate(file: DroolsFile): string {
     const sections: string[] = []
+    if (file.package)
+      sections.push(`package ${file.package}`)
     if (file.imports.length > 0)
       sections.push(file.imports.map(i => `import ${i};`).join('\n'))
     if (file.globals.length > 0)

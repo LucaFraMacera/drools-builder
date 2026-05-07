@@ -260,6 +260,7 @@ export interface ClassDeclaration {
 
 export interface DroolsFile {
   name: string
+  package?: string
   imports: string[]
   globals: GlobalDefinition[]
   declarations?: ClassDeclaration[]

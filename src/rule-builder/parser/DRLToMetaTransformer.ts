@@ -101,6 +101,11 @@ function stripComments(drl: string): string {
 
 // ─── FILE-LEVEL PARSING ───────────────────────────────────────────────────────
 
+function parsePackage(drl: string): string | undefined {
+  const m = drl.match(/^\s*package\s+([\w.]+)\s*;?/m)
+  return m ? m[1].trim() : undefined
+}
+
 function parseImports(drl: string): string[] {
   const imports: string[] = []
   const re = /^\s*import\s+([^\s;]+)\s*;?/gm
@@ -119,7 +124,7 @@ function parseGlobals(drl: string): GlobalDefinition[] {
 
 function extractRuleBlocks(drl: string): string[] {
   const blocks: string[] = []
-  const re = /\brule\s+(?:"[^"]*"|'[^']*')[\s\S]*?\bend\b/g
+  const re = /\brule\s+(?:"[^"]*"|'[^']*')[\s\S]*?\bend\b(?=\s*(?:\n|$))/g
   let m: RegExpExecArray | null
   while ((m = re.exec(drl)) !== null) blocks.push(m[0])
   return blocks
@@ -127,16 +132,17 @@ function extractRuleBlocks(drl: string): string[] {
 
 function parseFunctions(drl: string): FunctionDefinition[] {
   const results: FunctionDefinition[] = []
-  // Matches: function <returnType> <name>(<params>) { <body> }
-  // ([^{}]*(?:\{[^{}]*\}[^{}]*)*) handles one level of nested braces (e.g. if blocks)
-  const re = /\bfunction\s+([\w<>?,\s\[\]]+?)\s+(\w+)\s*\(([^)]*)\)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g
+  // Regex matches the signature; extractBalanced handles the body at any nesting depth
+  const re = /\bfunction\s+([\w<>?,\s\[\]]+?)\s+(\w+)\s*\(([^)]*)\)\s*\{/g
   let m: RegExpExecArray | null
   while ((m = re.exec(drl)) !== null) {
+    const fromBrace = drl.slice(m.index + m[0].length - 1)
+    const body = extractBalanced(fromBrace, '{', '}')
     results.push({
       returnType: m[1].trim(),
       name: m[2].trim(),
       params: m[3].trim(),
-      body: parseConsequences(m[4].trim())
+      body: parseConsequences(body.trim())
     })
   }
   return results
@@ -144,7 +150,7 @@ function parseFunctions(drl: string): FunctionDefinition[] {
 
 function parseDeclarations(drl: string): ClassDeclaration[] {
   const results: ClassDeclaration[] = []
-  const re = /\bdeclare\s+(\w+)\s*([\s\S]*?)\bend\b/g
+  const re = /\bdeclare\s+(\w+)\s*([\s\S]*?)\bend\b(?=\s*(?:\n|$))/g
   let m: RegExpExecArray | null
   while ((m = re.exec(drl)) !== null) {
     const className = m[1].trim()
@@ -188,7 +194,7 @@ function extractWhenBlock(block: string): string {
 }
 
 function extractThenBlock(block: string): string {
-  const m = block.match(/\bthen\b([\s\S]*?)\bend\b/)
+  const m = block.match(/\bthen\b([\s\S]*?)\bend\b(?=\s*(?:\n|$))/)
   return m ? m[1].trim() : ''
 }
 
@@ -412,8 +418,7 @@ function parseSwitchBody(body: string): { cases: CaseConsequence[], default?: Co
     const marker = markers[i]
     const contentStart = marker.index + marker.headerLen
     const contentEnd   = i + 1 < markers.length ? markers[i + 1].index : body.length
-    const raw     = body.slice(contentStart, contentEnd).trim()
-    const content = raw.replace(/\s*\bbreak\s*;\s*$/, '').trim()
+    const content = body.slice(contentStart, contentEnd).trim()
 
     if (marker.type === 'case')
       cases.push({ kind: 'CaseConsequence', value: marker.value!, body: parseConsequences(content) })
@@ -498,7 +503,15 @@ function parseNextConsequence(text: string): { consequence: Consequence; rest: s
     const thenConsequences = parseConsequences(thenBlock)
     let afterThen = afterCond.slice(afterCond.indexOf('{') + thenBlock.length + 2).trim()
     let elseConsequences: IfConsequence['else']
-    if (/^else\s*\{/.test(afterThen)) {
+    if (/^else\s+if\s*\(/.test(afterThen)) {
+      // else if — parse recursively as a nested IfConsequence in the else branch
+      const elseIfText = afterThen.slice(afterThen.search(/\bif\s*\(/))
+      const elseIfResult = parseNextConsequence(elseIfText)
+      if (elseIfResult) {
+        elseConsequences = [elseIfResult.consequence]
+        afterThen = elseIfResult.rest.trim()
+      }
+    } else if (/^else\s*\{/.test(afterThen)) {
       const elseBlock = extractBalanced(afterThen, '{', '}')
       elseConsequences = parseConsequences(elseBlock)
       afterThen = afterThen.slice(afterThen.indexOf('{') + elseBlock.length + 2).trim()
@@ -547,6 +560,37 @@ function parseNextConsequence(text: string): { consequence: Consequence; rest: s
     }
   }
 
+  // Variable declaration: Type name = value;
+  // Type starts with uppercase (class) or is a known primitive
+  const varDeclMatch = t.match(/^((?:[A-Z][\w<>., [\]]*|int|double|float|long|boolean|char|byte|short)\s+)(\w+)\s*=\s*/)
+  if (varDeclMatch) {
+    const typeName = varDeclMatch[1].trim()
+    const name = varDeclMatch[2]
+    const afterDecl = t.slice(varDeclMatch[0].length)
+    const semiIdx2 = indexAtDepth0(afterDecl, ';')
+    if (semiIdx2 !== -1) {
+      return {
+        consequence: { kind: 'VarDeclConsequence', typeName, name, value: afterDecl.slice(0, semiIdx2).trim() },
+        rest: afterDecl.slice(semiIdx2 + 1)
+      }
+    }
+  }
+
+  // Method call on a local variable: identifier.method(args);
+  // identifier starts with lowercase (distinguishes from class names and $bindings)
+  const methodCallMatch = t.match(/^([a-z]\w*)\.(\w+)\(/)
+  if (methodCallMatch) {
+    const object = methodCallMatch[1]
+    const method = methodCallMatch[2]
+    const afterMethod = t.slice(object.length + 1 + method.length)
+    const args = extractBalanced(afterMethod, '(', ')')
+    const rest = afterMethod.slice(args.length + 2).replace(/^\s*;/, '')
+    return {
+      consequence: { kind: 'MethodCallConsequence', object, method, args: args.trim() },
+      rest
+    }
+  }
+
   // Any other statement ending with ;
   const semiIdx = indexAtDepth0(t, ';')
   if (semiIdx !== -1)
@@ -560,7 +604,7 @@ function parseModifications(block: string): Modification[] {
     .map(s => s.trim())
     .filter(Boolean)
     .map(text => {
-      const m = text.match(/^(\w+)\s*\(([\s\S]*)\)$/)
+      const m = text.match(/^(\w+)\s*\(([\s\S]*)\)\s*;?\s*$/)
       if (!m) return { method: text, args: [] }
       const args = m[2].trim() ? splitAtDepth0(m[2].trim(), ',').map(a => a.trim()) : []
       return { method: m[1], args }
@@ -575,6 +619,7 @@ export const DRLToMetaTransformer = {
     const clean = stripComments(drl)
     return {
       name: 'parsed',
+      package: parsePackage(clean),
       imports: [...new Set(parseImports(clean))],
       globals: parseGlobals(clean),
       declarations: parseDeclarations(clean),

@@ -502,7 +502,6 @@ describe('MetaToDRLTransformer — SwitchConsequence', () => {
     expect(drl).toContain('switch ($status) {')
     expect(drl).toContain('case "active":')
     expect(drl).toContain('case "inactive":')
-    expect(drl).toContain('break;')
     expect(drl).not.toContain('default')
   })
 
